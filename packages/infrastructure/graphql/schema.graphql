@@ -1,0 +1,102 @@
+type User {
+  id: ID!
+  email: String!
+  fullName: String!
+  jurisdiction: String!
+  planType: String!
+  stripeCustomerId: String
+  createdAt: String!
+  updatedAt: String!
+}
+
+type Chat {
+  id: ID!
+  userId: ID!
+  title: String!
+  createdAt: String!
+  updatedAt: String!
+  lastMessageAt: String
+  messageCount: Int!
+}
+
+type Message {
+  id: ID!
+  chatId: ID!
+  userId: ID!
+  role: MessageRole!
+  content: String!
+  metadata: MessageMetadata
+  createdAt: String!
+}
+
+type MessageMetadata {
+  tokens: Int
+  model: String
+  citations: [Citation]
+  processingTime: Float
+}
+
+type Citation {
+  source: String!
+  title: String!
+  section: String
+  relevanceScore: Float!
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+type Query {
+  getUser(id: ID!): User
+  listChats(userId: ID!, limit: Int, nextToken: String): ChatConnection!
+  getChat(id: ID!): Chat
+  listMessages(chatId: ID!, limit: Int, nextToken: String): MessageConnection!
+}
+
+type Mutation {
+  createChat(input: CreateChatInput!): Chat!
+  sendMessage(input: SendMessageInput!): Message!
+  updateUser(input: UpdateUserInput!): User!
+  deleteChat(id: ID!): Boolean!
+}
+
+type Subscription {
+  onMessageSent(chatId: ID!): Message
+    @aws_subscribe(mutations: ["sendMessage"])
+}
+
+input CreateChatInput {
+  userId: ID!
+  title: String!
+}
+
+input SendMessageInput {
+  chatId: ID!
+  userId: ID!
+  content: String!
+}
+
+input UpdateUserInput {
+  id: ID!
+  fullName: String
+  jurisdiction: String
+}
+
+type ChatConnection {
+  items: [Chat!]!
+  nextToken: String
+}
+
+type MessageConnection {
+  items: [Message!]!
+  nextToken: String
+}
+
+schema {
+  query: Query
+  mutation: Mutation
+  subscription: Subscription
+}
