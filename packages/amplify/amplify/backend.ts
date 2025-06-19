@@ -15,5 +15,3 @@ const backend = defineBackend({
   preTokenGeneration,
   postConfirmation,
 });
-
-
