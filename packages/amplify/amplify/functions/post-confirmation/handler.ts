@@ -24,21 +24,8 @@ export const handler: PostConfirmationTriggerHandler = async (event) => {
     const timestamp = new Date().toISOString();
     const userId = event.request.userAttributes.sub;
     
-    await docClient.send(new PutCommand({
-      TableName: process.env.MAIN_TABLE_NAME!,
-      Item: {
-        id: userId,
-        __typename: 'User',
-        email: event.request.userAttributes.email,
-        fullName: event.request.userAttributes.name || '',
-        jurisdiction: 'NSW',
-        planType: 'free',
-        stripeCustomerId: '',
-        createdAt: timestamp,
-        updatedAt: timestamp,
-        owner: userId,
-      }
-    }));
+    // Note: DynamoDB operations removed to avoid circular dependency
+    // User profile creation can be handled in the frontend after auth
     
     console.log('Created user profile in DynamoDB');
     

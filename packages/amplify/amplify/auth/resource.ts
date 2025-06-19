@@ -20,7 +20,7 @@ export const auth = defineAuth({
       required: true,
       mutable: true,
     },
-    name: {
+    givenName: {
       required: true,
       mutable: true,
     },
@@ -42,13 +42,6 @@ export const auth = defineAuth({
       minLen: 3,
       maxLen: 50,
     },
-  },
-  passwordPolicy: {
-    minimumLength: 12,
-    requireLowercase: true,
-    requireNumbers: true,
-    requireUppercase: true,
-    requireSymbols: true,
   },
   accountRecovery: 'EMAIL_ONLY',
   multifactor: {
