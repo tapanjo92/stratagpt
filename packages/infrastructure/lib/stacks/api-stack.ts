@@ -1,8 +1,10 @@
-import { Stack, StackProps, CfnOutput } from 'aws-cdk-lib';
+import { Stack, StackProps, CfnOutput, Duration } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as appsync from 'aws-cdk-lib/aws-appsync';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as logs from 'aws-cdk-lib/aws-logs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { EnvironmentConfig } from '../config/environment';
 
@@ -64,6 +66,29 @@ export class ApiStack extends Stack {
 
     // Create None data source for local resolvers
     const noneDataSource = this.graphqlApi.addNoneDataSource('NoneDataSource');
+
+    // Create Chat Handler Lambda
+    const chatHandlerLambda = new lambda.Function(this, 'ChatHandlerLambda', {
+      runtime: lambda.Runtime.NODEJS_18_X,
+      handler: 'index.handler',
+      code: lambda.Code.fromAsset('lambda/chat-handler'),
+      environment: {
+        MAIN_TABLE_NAME: mainTable.tableName,
+        STAGE: config.stage,
+      },
+      timeout: Duration.seconds(30),
+      logRetention: logs.RetentionDays.ONE_WEEK,
+      description: 'GraphQL resolver for chat operations with AI integration',
+    });
+
+    // Grant DynamoDB permissions to chat handler
+    mainTable.grantReadWriteData(chatHandlerLambda);
+
+    // Create Lambda data source
+    const chatHandlerDataSource = this.graphqlApi.addLambdaDataSource(
+      'ChatHandlerDataSource',
+      chatHandlerLambda
+    );
 
     // Define resolvers
     const resolvers = [
@@ -138,28 +163,9 @@ export class ApiStack extends Stack {
       {
         typeName: 'Mutation',
         fieldName: 'sendMessage',
-        dataSource: dynamoDataSource,
-        requestMappingTemplate: appsync.MappingTemplate.fromString(`
-          #set($messageId = $util.autoId())
-          #set($now = $util.time.nowISO8601())
-          {
-            "version": "2017-02-28",
-            "operation": "PutItem",
-            "key": {
-              "PK": $util.dynamodb.toDynamoDBJson("CHAT#$ctx.args.input.chatId"),
-              "SK": $util.dynamodb.toDynamoDBJson("MESSAGE#$messageId")
-            },
-            "attributeValues": {
-              "id": $util.dynamodb.toDynamoDBJson($messageId),
-              "chatId": $util.dynamodb.toDynamoDBJson($ctx.args.input.chatId),
-              "userId": $util.dynamodb.toDynamoDBJson($ctx.args.input.userId),
-              "role": $util.dynamodb.toDynamoDBJson("USER"),
-              "content": $util.dynamodb.toDynamoDBJson($ctx.args.input.content),
-              "createdAt": $util.dynamodb.toDynamoDBJson($now)
-            }
-          }
-        `),
-        responseMappingTemplate: appsync.MappingTemplate.dynamoDbResultItem(),
+        dataSource: chatHandlerDataSource,
+        requestMappingTemplate: appsync.MappingTemplate.lambdaRequest(),
+        responseMappingTemplate: appsync.MappingTemplate.lambdaResult(),
       },
       {
         typeName: 'Query',
