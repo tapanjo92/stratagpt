@@ -7,6 +7,8 @@ import { EnvironmentConfig } from '../config/environment';
 
 export interface AuthStackProps extends StackProps {
   config: EnvironmentConfig;
+  preTokenGenerationLambda?: lambda.Function;
+  postConfirmationLambda?: lambda.Function;
 }
 
 export class AuthStack extends Stack {
@@ -78,84 +80,14 @@ export class AuthStack extends Stack {
       },
     });
 
-    // Pre Token Generation Lambda - Add custom claims
-    const preTokenGenLambda = new lambda.Function(this, 'PreTokenGeneration', {
-      runtime: lambda.Runtime.NODEJS_20_X,
-      handler: 'index.handler',
-      code: lambda.Code.fromInline(`
-        exports.handler = async (event) => {
-          console.log('Pre-token generation event:', JSON.stringify(event, null, 2));
-          
-          // Add custom claims to ID token
-          event.response = {
-            claimsOverrideDetails: {
-              claimsToAddOrOverride: {
-                jurisdiction: event.request.userAttributes['custom:jurisdiction'] || 'NSW',
-                plan_type: event.request.userAttributes['custom:plan_type'] || 'free',
-                stripe_customer_id: event.request.userAttributes['custom:stripe_customer_id'] || '',
-              },
-              groupOverrideDetails: {
-                groupsToOverride: event.request.groupConfiguration?.groupsToOverride || []
-              }
-            }
-          };
-          
-          return event;
-        };
-      `),
-      timeout: Duration.seconds(5),
-      functionName: `${config.projectName}-pre-token-gen`,
-    });
-
-    // Post Confirmation Lambda - User onboarding
-    const postConfirmationLambda = new lambda.Function(this, 'PostConfirmation', {
-      runtime: lambda.Runtime.NODEJS_20_X,
-      handler: 'index.handler',
-      code: lambda.Code.fromInline(`
-        const { CognitoIdentityProviderClient, AdminAddUserToGroupCommand } = require('@aws-sdk/client-cognito-identity-provider');
-        
-        exports.handler = async (event) => {
-          console.log('Post confirmation event:', JSON.stringify(event, null, 2));
-          
-          const cognito = new CognitoIdentityProviderClient({ region: process.env.AWS_REGION });
-          
-          // Add user to free group by default
-          try {
-            await cognito.send(new AdminAddUserToGroupCommand({
-              UserPoolId: event.userPoolId,
-              Username: event.userName,
-              GroupName: 'free'
-            }));
-            
-            console.log('Added user to free group');
-          } catch (error) {
-            console.error('Error adding user to group:', error);
-            // Don't fail the signup process
-          }
-          
-          // TODO: Send welcome email via SES
-          // TODO: Create user profile in DynamoDB
-          
-          return event;
-        };
-      `),
-      timeout: Duration.seconds(10),
-      functionName: `${config.projectName}-post-confirmation`,
-      environment: {
-        USER_POOL_ID: this.userPool.userPoolId,
-      },
-    });
-
-    // Grant permissions to Post Confirmation Lambda
-    postConfirmationLambda.addToRolePolicy(new iam.PolicyStatement({
-      actions: ['cognito-idp:AdminAddUserToGroup'],
-      resources: [this.userPool.userPoolArn],
-    }));
-
-    // Lambda triggers temporarily removed to resolve circular dependencies
-    // TODO: Re-enable triggers after resolving circular dependencies
-    // this.userPool.addTrigger(cognito.UserPoolOperation.PRE_TOKEN_GENERATION, preTokenGenLambda);
-    // this.userPool.addTrigger(cognito.UserPoolOperation.POST_CONFIRMATION, postConfirmationLambda);
+    // Add Lambda triggers if provided (from UserManagementStack)
+    if (props.preTokenGenerationLambda) {
+      this.userPool.addTrigger(cognito.UserPoolOperation.PRE_TOKEN_GENERATION, props.preTokenGenerationLambda);
+    }
+    
+    if (props.postConfirmationLambda) {
+      this.userPool.addTrigger(cognito.UserPoolOperation.POST_CONFIRMATION, props.postConfirmationLambda);
+    }
 
     // Create App Client
     this.userPoolClient = new cognito.UserPoolClient(this, 'UserPoolClient', {

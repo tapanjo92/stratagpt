@@ -71,31 +71,66 @@ export class ApiStack extends Stack {
         typeName: 'Query',
         fieldName: 'getUser',
         dataSource: dynamoDataSource,
-        requestMappingTemplate: appsync.MappingTemplate.dynamoDbGetItem('PK', 'SK'),
+        requestMappingTemplate: appsync.MappingTemplate.fromString(`
+          {
+            "version": "2017-02-28",
+            "operation": "GetItem",
+            "key": {
+              "PK": $util.dynamodb.toDynamoDBJson("USER#$ctx.args.id"),
+              "SK": $util.dynamodb.toDynamoDBJson("USER#$ctx.args.id")
+            }
+          }
+        `),
         responseMappingTemplate: appsync.MappingTemplate.dynamoDbResultItem(),
       },
       {
         typeName: 'Query',
         fieldName: 'listChats',
         dataSource: dynamoDataSource,
-        requestMappingTemplate: appsync.MappingTemplate.dynamoDbQuery(
-          appsync.KeyCondition.eq('PK', 'PK'),
-        ),
-        responseMappingTemplate: appsync.MappingTemplate.dynamoDbResultList(),
+        requestMappingTemplate: appsync.MappingTemplate.fromString(`
+          {
+            "version": "2017-02-28",
+            "operation": "Query",
+            "query": {
+              "expression": "PK = :pk AND begins_with(SK, :sk)",
+              "expressionValues": {
+                ":pk": $util.dynamodb.toDynamoDBJson("USER#$ctx.args.userId"),
+                ":sk": $util.dynamodb.toDynamoDBJson("CHAT#")
+              }
+            },
+            "limit": $util.defaultIfNull($ctx.args.limit, 20),
+            "nextToken": $util.toJson($util.defaultIfNullOrBlank($ctx.args.nextToken, null))
+          }
+        `),
+        responseMappingTemplate: appsync.MappingTemplate.fromString(`
+          {
+            "items": $util.toJson($ctx.result.items),
+            "nextToken": $util.toJson($util.defaultIfNullOrBlank($context.result.nextToken, null))
+          }
+        `),
       },
       {
         typeName: 'Mutation',
         fieldName: 'createChat',
         dataSource: dynamoDataSource,
         requestMappingTemplate: appsync.MappingTemplate.fromString(`
+          #set($chatId = $util.autoId())
+          #set($now = $util.time.nowISO8601())
           {
             "version": "2017-02-28",
             "operation": "PutItem",
             "key": {
-              "PK": $util.dynamodb.toDynamoDBJson($ctx.args.input.PK),
-              "SK": $util.dynamodb.toDynamoDBJson($ctx.args.input.SK)
+              "PK": $util.dynamodb.toDynamoDBJson("USER#$ctx.args.input.userId"),
+              "SK": $util.dynamodb.toDynamoDBJson("CHAT#$chatId")
             },
-            "attributeValues": $util.dynamodb.toMapValuesJson($ctx.args.input)
+            "attributeValues": {
+              "id": $util.dynamodb.toDynamoDBJson($chatId),
+              "userId": $util.dynamodb.toDynamoDBJson($ctx.args.input.userId),
+              "title": $util.dynamodb.toDynamoDBJson($ctx.args.input.title),
+              "createdAt": $util.dynamodb.toDynamoDBJson($now),
+              "updatedAt": $util.dynamodb.toDynamoDBJson($now),
+              "messageCount": $util.dynamodb.toDynamoDBJson(0)
+            }
           }
         `),
         responseMappingTemplate: appsync.MappingTemplate.dynamoDbResultItem(),
@@ -105,17 +140,129 @@ export class ApiStack extends Stack {
         fieldName: 'sendMessage',
         dataSource: dynamoDataSource,
         requestMappingTemplate: appsync.MappingTemplate.fromString(`
+          #set($messageId = $util.autoId())
+          #set($now = $util.time.nowISO8601())
           {
             "version": "2017-02-28",
             "operation": "PutItem",
             "key": {
-              "PK": $util.dynamodb.toDynamoDBJson($ctx.args.input.PK),
-              "SK": $util.dynamodb.toDynamoDBJson($ctx.args.input.SK)
+              "PK": $util.dynamodb.toDynamoDBJson("CHAT#$ctx.args.input.chatId"),
+              "SK": $util.dynamodb.toDynamoDBJson("MESSAGE#$messageId")
             },
-            "attributeValues": $util.dynamodb.toMapValuesJson($ctx.args.input)
+            "attributeValues": {
+              "id": $util.dynamodb.toDynamoDBJson($messageId),
+              "chatId": $util.dynamodb.toDynamoDBJson($ctx.args.input.chatId),
+              "userId": $util.dynamodb.toDynamoDBJson($ctx.args.input.userId),
+              "role": $util.dynamodb.toDynamoDBJson("USER"),
+              "content": $util.dynamodb.toDynamoDBJson($ctx.args.input.content),
+              "createdAt": $util.dynamodb.toDynamoDBJson($now)
+            }
           }
         `),
         responseMappingTemplate: appsync.MappingTemplate.dynamoDbResultItem(),
+      },
+      {
+        typeName: 'Query',
+        fieldName: 'getChat',
+        dataSource: dynamoDataSource,
+        requestMappingTemplate: appsync.MappingTemplate.fromString(`
+          {
+            "version": "2017-02-28",
+            "operation": "GetItem",
+            "key": {
+              "PK": $util.dynamodb.toDynamoDBJson("USER#$ctx.identity.sub"),
+              "SK": $util.dynamodb.toDynamoDBJson("CHAT#$ctx.args.id")
+            }
+          }
+        `),
+        responseMappingTemplate: appsync.MappingTemplate.dynamoDbResultItem(),
+      },
+      {
+        typeName: 'Query',
+        fieldName: 'listMessages',
+        dataSource: dynamoDataSource,
+        requestMappingTemplate: appsync.MappingTemplate.fromString(`
+          {
+            "version": "2017-02-28",
+            "operation": "Query",
+            "query": {
+              "expression": "PK = :pk AND begins_with(SK, :sk)",
+              "expressionValues": {
+                ":pk": $util.dynamodb.toDynamoDBJson("CHAT#$ctx.args.chatId"),
+                ":sk": $util.dynamodb.toDynamoDBJson("MESSAGE#")
+              }
+            },
+            "scanIndexForward": false,
+            "limit": $util.defaultIfNull($ctx.args.limit, 20),
+            "nextToken": $util.toJson($util.defaultIfNullOrBlank($ctx.args.nextToken, null))
+          }
+        `),
+        responseMappingTemplate: appsync.MappingTemplate.fromString(`
+          {
+            "items": $util.toJson($ctx.result.items),
+            "nextToken": $util.toJson($util.defaultIfNullOrBlank($context.result.nextToken, null))
+          }
+        `),
+      },
+      {
+        typeName: 'Mutation',
+        fieldName: 'updateUser',
+        dataSource: dynamoDataSource,
+        requestMappingTemplate: appsync.MappingTemplate.fromString(`
+          #set($now = $util.time.nowISO8601())
+          #set($updates = {})
+          #if($ctx.args.input.fullName)
+            $util.qr($updates.put("fullName", $util.dynamodb.toDynamoDBJson($ctx.args.input.fullName)))
+          #end
+          #if($ctx.args.input.jurisdiction)
+            $util.qr($updates.put("jurisdiction", $util.dynamodb.toDynamoDBJson($ctx.args.input.jurisdiction)))
+          #end
+          $util.qr($updates.put("updatedAt", $util.dynamodb.toDynamoDBJson($now)))
+          {
+            "version": "2017-02-28",
+            "operation": "UpdateItem",
+            "key": {
+              "PK": $util.dynamodb.toDynamoDBJson("USER#$ctx.args.input.id"),
+              "SK": $util.dynamodb.toDynamoDBJson("USER#$ctx.args.input.id")
+            },
+            "update": {
+              "expression": "SET #updatedAt = :updatedAt#if($ctx.args.input.fullName), #fullName = :fullName#end#if($ctx.args.input.jurisdiction), #jurisdiction = :jurisdiction#end",
+              "expressionNames": {
+                "#updatedAt": "updatedAt"
+                #if($ctx.args.input.fullName)
+                  ,"#fullName": "fullName"
+                #end
+                #if($ctx.args.input.jurisdiction)
+                  ,"#jurisdiction": "jurisdiction"
+                #end
+              },
+              "expressionValues": $util.toJson($updates)
+            }
+          }
+        `),
+        responseMappingTemplate: appsync.MappingTemplate.dynamoDbResultItem(),
+      },
+      {
+        typeName: 'Mutation',
+        fieldName: 'deleteChat',
+        dataSource: dynamoDataSource,
+        requestMappingTemplate: appsync.MappingTemplate.fromString(`
+          {
+            "version": "2017-02-28",
+            "operation": "DeleteItem",
+            "key": {
+              "PK": $util.dynamodb.toDynamoDBJson("USER#$ctx.identity.sub"),
+              "SK": $util.dynamodb.toDynamoDBJson("CHAT#$ctx.args.id")
+            }
+          }
+        `),
+        responseMappingTemplate: appsync.MappingTemplate.fromString(`
+          #if($ctx.result)
+            true
+          #else
+            false
+          #end
+        `),
       },
       {
         typeName: 'Subscription',

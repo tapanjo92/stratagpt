@@ -5,6 +5,7 @@ import { NetworkStack } from './stacks/network-stack';
 import { AuthStack } from './stacks/auth-stack';
 import { DataStack } from './stacks/data-stack';
 import { ApiStack } from './stacks/api-stack';
+import { UserManagementStack } from './stacks/user-management-stack';
 import { getEnvironmentConfig } from './config/environment';
 
 const app = new cdk.App();
@@ -26,16 +27,25 @@ const networkStack = new NetworkStack(app, `${config.projectName}-network`, {
   description: 'StrataGPT Network Infrastructure',
 });
 
-const authStack = new AuthStack(app, `${config.projectName}-auth`, {
-  env,
-  config,
-  description: 'StrataGPT Authentication Infrastructure',
-});
-
 const dataStack = new DataStack(app, `${config.projectName}-data`, {
   env,
   config,
   description: 'StrataGPT Data Storage Infrastructure',
+});
+
+const userManagementStack = new UserManagementStack(app, `${config.projectName}-user-mgmt`, {
+  env,
+  config,
+  mainTable: dataStack.mainTable,
+  description: 'StrataGPT User Management Infrastructure',
+});
+
+const authStack = new AuthStack(app, `${config.projectName}-auth`, {
+  env,
+  config,
+  preTokenGenerationLambda: userManagementStack.preTokenGenerationLambda,
+  postConfirmationLambda: userManagementStack.postConfirmationLambda,
+  description: 'StrataGPT Authentication Infrastructure',
 });
 
 const apiStack = new ApiStack(app, `${config.projectName}-api`, {
@@ -47,8 +57,10 @@ const apiStack = new ApiStack(app, `${config.projectName}-api`, {
 });
 
 // Add dependencies
-authStack.addDependency(networkStack);
 dataStack.addDependency(networkStack);
+userManagementStack.addDependency(dataStack);
+authStack.addDependency(networkStack);
+authStack.addDependency(userManagementStack);
 apiStack.addDependency(authStack);
 apiStack.addDependency(dataStack);
 
