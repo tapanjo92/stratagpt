@@ -53,3 +53,17 @@ export const deleteChat = /* GraphQL */ `
     deleteChat(id: $id)
   }
 `;
+
+export const createUser = /* GraphQL */ `
+  mutation CreateUser($input: CreateUserInput!) {
+    createUser(input: $input) {
+      id
+      email
+      fullName
+      jurisdiction
+      planType
+      createdAt
+      updatedAt
+    }
+  }
+`;

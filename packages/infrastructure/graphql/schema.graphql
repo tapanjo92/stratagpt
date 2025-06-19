@@ -57,6 +57,7 @@ type Query {
 }
 
 type Mutation {
+  createUser(input: CreateUserInput!): User!
   createChat(input: CreateChatInput!): Chat!
   sendMessage(input: SendMessageInput!): Message!
   updateUser(input: UpdateUserInput!): User!
@@ -66,6 +67,14 @@ type Mutation {
 type Subscription {
   onMessageSent(chatId: ID!): Message
     @aws_subscribe(mutations: ["sendMessage"])
+}
+
+input CreateUserInput {
+  id: ID!
+  email: String!
+  fullName: String!
+  jurisdiction: String!
+  planType: String!
 }
 
 input CreateChatInput {

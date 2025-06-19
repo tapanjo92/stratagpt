@@ -33,10 +33,22 @@ interface Citation {
   relevanceScore: number;
 }
 
-export const handler = async (event: AppSyncResolverEvent<SendMessageInput>) => {
+export const handler = async (event: AppSyncResolverEvent<{ input: SendMessageInput }>) => {
   console.log('Chat handler event:', JSON.stringify(event, null, 2));
   
   const { chatId, userId, content } = event.arguments.input;
+  const authenticatedUserId = (event.identity as any)?.sub;
+  
+  // Check authentication
+  if (!authenticatedUserId) {
+    throw new Error('User must be authenticated to send messages');
+  }
+  
+  // Authorization check: users can only send messages as themselves
+  if (userId !== authenticatedUserId) {
+    throw new Error('Users can only send messages as themselves');
+  }
+  
   const now = new Date().toISOString();
   const userMessageId = generateId();
   const assistantMessageId = generateId();

@@ -24,6 +24,9 @@
   },
   "dependencies": {
     "@aws-sdk/client-cloudformation": "^3.0.0",
+    "@aws-sdk/client-dynamodb": "^3.830.0",
+    "@aws-sdk/lib-dynamodb": "^3.830.0",
+    "@types/aws-lambda": "^8.10.150",
     "aws-cdk-lib": "2.200.1",
     "constructs": "^10.4.2"
   }

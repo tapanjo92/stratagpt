@@ -84,19 +84,52 @@ export class ApiStack extends Stack {
     // Grant DynamoDB permissions to chat handler
     mainTable.grantReadWriteData(chatHandlerLambda);
 
-    // Create Lambda data source
+    // Create Chat Lambda data source
     const chatHandlerDataSource = this.graphqlApi.addLambdaDataSource(
       'ChatHandlerDataSource',
       chatHandlerLambda
     );
 
+    // Create User Handler Lambda
+    const userHandlerLambda = new lambda.Function(this, 'UserHandlerLambda', {
+      runtime: lambda.Runtime.NODEJS_18_X,
+      handler: 'index.handler',
+      code: lambda.Code.fromAsset('lambda/user-handler'),
+      environment: {
+        MAIN_TABLE_NAME: mainTable.tableName,
+        STAGE: config.stage,
+      },
+      timeout: Duration.seconds(30),
+      logRetention: logs.RetentionDays.ONE_WEEK,
+      description: 'GraphQL resolver for user management operations with validation',
+    });
+
+    // Grant DynamoDB permissions to user handler
+    mainTable.grantReadWriteData(userHandlerLambda);
+
+    // Create User Lambda data source
+    const userHandlerDataSource = this.graphqlApi.addLambdaDataSource(
+      'UserHandlerDataSource',
+      userHandlerLambda
+    );
+
     // Define resolvers
     const resolvers = [
+      {
+        typeName: 'Mutation',
+        fieldName: 'createUser',
+        dataSource: userHandlerDataSource,
+        requestMappingTemplate: appsync.MappingTemplate.lambdaRequest(),
+        responseMappingTemplate: appsync.MappingTemplate.lambdaResult(),
+      },
       {
         typeName: 'Query',
         fieldName: 'getUser',
         dataSource: dynamoDataSource,
         requestMappingTemplate: appsync.MappingTemplate.fromString(`
+          #if(!$ctx.args.id || $ctx.args.id.trim() == "")
+            $util.error("User ID is required and cannot be empty", "ValidationError")
+          #end
           {
             "version": "2017-02-28",
             "operation": "GetItem",
@@ -106,13 +139,27 @@ export class ApiStack extends Stack {
             }
           }
         `),
-        responseMappingTemplate: appsync.MappingTemplate.dynamoDbResultItem(),
+        responseMappingTemplate: appsync.MappingTemplate.fromString(`
+          #if($ctx.error)
+            $util.error($ctx.error.message, $ctx.error.type)
+          #end
+          #if(!$ctx.result)
+            $util.error("User not found", "NotFoundError")
+          #end
+          $util.toJson($ctx.result)
+        `),
       },
       {
         typeName: 'Query',
         fieldName: 'listChats',
         dataSource: dynamoDataSource,
         requestMappingTemplate: appsync.MappingTemplate.fromString(`
+          #if(!$ctx.args.userId || $ctx.args.userId.trim() == "")
+            $util.error("User ID is required and cannot be empty", "ValidationError")
+          #end
+          #if($ctx.args.limit && ($ctx.args.limit < 1 || $ctx.args.limit > 100))
+            $util.error("Limit must be between 1 and 100", "ValidationError")
+          #end
           {
             "version": "2017-02-28",
             "operation": "Query",
@@ -128,9 +175,12 @@ export class ApiStack extends Stack {
           }
         `),
         responseMappingTemplate: appsync.MappingTemplate.fromString(`
+          #if($ctx.error)
+            $util.error($ctx.error.message, $ctx.error.type)
+          #end
           {
-            "items": $util.toJson($ctx.result.items),
-            "nextToken": $util.toJson($util.defaultIfNullOrBlank($context.result.nextToken, null))
+            "items": $util.toJson($util.defaultIfNull($ctx.result.items, [])),
+            "nextToken": $util.toJson($util.defaultIfNullOrBlank($ctx.result.nextToken, null))
           }
         `),
       },
@@ -139,6 +189,15 @@ export class ApiStack extends Stack {
         fieldName: 'createChat',
         dataSource: dynamoDataSource,
         requestMappingTemplate: appsync.MappingTemplate.fromString(`
+          #if(!$ctx.args.input.userId || $ctx.args.input.userId.trim() == "")
+            $util.error("User ID is required and cannot be empty", "ValidationError")
+          #end
+          #if(!$ctx.args.input.title || $ctx.args.input.title.trim() == "")
+            $util.error("Chat title is required and cannot be empty", "ValidationError")
+          #end
+          #if($ctx.args.input.title.length() > 100)
+            $util.error("Chat title cannot exceed 100 characters", "ValidationError")
+          #end
           #set($chatId = $util.autoId())
           #set($now = $util.time.nowISO8601())
           {
@@ -151,14 +210,19 @@ export class ApiStack extends Stack {
             "attributeValues": {
               "id": $util.dynamodb.toDynamoDBJson($chatId),
               "userId": $util.dynamodb.toDynamoDBJson($ctx.args.input.userId),
-              "title": $util.dynamodb.toDynamoDBJson($ctx.args.input.title),
+              "title": $util.dynamodb.toDynamoDBJson($ctx.args.input.title.trim()),
               "createdAt": $util.dynamodb.toDynamoDBJson($now),
               "updatedAt": $util.dynamodb.toDynamoDBJson($now),
               "messageCount": $util.dynamodb.toDynamoDBJson(0)
             }
           }
         `),
-        responseMappingTemplate: appsync.MappingTemplate.dynamoDbResultItem(),
+        responseMappingTemplate: appsync.MappingTemplate.fromString(`
+          #if($ctx.error)
+            $util.error($ctx.error.message, $ctx.error.type)
+          #end
+          $util.toJson($ctx.result)
+        `),
       },
       {
         typeName: 'Mutation',
@@ -172,6 +236,12 @@ export class ApiStack extends Stack {
         fieldName: 'getChat',
         dataSource: dynamoDataSource,
         requestMappingTemplate: appsync.MappingTemplate.fromString(`
+          #if(!$ctx.args.id || $ctx.args.id.trim() == "")
+            $util.error("Chat ID is required and cannot be empty", "ValidationError")
+          #end
+          #if(!$ctx.identity.sub)
+            $util.error("User must be authenticated", "UnauthorizedError")
+          #end
           {
             "version": "2017-02-28",
             "operation": "GetItem",
@@ -181,13 +251,27 @@ export class ApiStack extends Stack {
             }
           }
         `),
-        responseMappingTemplate: appsync.MappingTemplate.dynamoDbResultItem(),
+        responseMappingTemplate: appsync.MappingTemplate.fromString(`
+          #if($ctx.error)
+            $util.error($ctx.error.message, $ctx.error.type)
+          #end
+          #if(!$ctx.result)
+            $util.error("Chat not found or access denied", "NotFoundError")
+          #end
+          $util.toJson($ctx.result)
+        `),
       },
       {
         typeName: 'Query',
         fieldName: 'listMessages',
         dataSource: dynamoDataSource,
         requestMappingTemplate: appsync.MappingTemplate.fromString(`
+          #if(!$ctx.args.chatId || $ctx.args.chatId.trim() == "")
+            $util.error("Chat ID is required and cannot be empty", "ValidationError")
+          #end
+          #if($ctx.args.limit && ($ctx.args.limit < 1 || $ctx.args.limit > 100))
+            $util.error("Limit must be between 1 and 100", "ValidationError")
+          #end
           {
             "version": "2017-02-28",
             "operation": "Query",
@@ -204,9 +288,12 @@ export class ApiStack extends Stack {
           }
         `),
         responseMappingTemplate: appsync.MappingTemplate.fromString(`
+          #if($ctx.error)
+            $util.error($ctx.error.message, $ctx.error.type)
+          #end
           {
-            "items": $util.toJson($ctx.result.items),
-            "nextToken": $util.toJson($util.defaultIfNullOrBlank($context.result.nextToken, null))
+            "items": $util.toJson($util.defaultIfNull($ctx.result.items, [])),
+            "nextToken": $util.toJson($util.defaultIfNullOrBlank($ctx.result.nextToken, null))
           }
         `),
       },
@@ -215,13 +302,25 @@ export class ApiStack extends Stack {
         fieldName: 'updateUser',
         dataSource: dynamoDataSource,
         requestMappingTemplate: appsync.MappingTemplate.fromString(`
+          #if(!$ctx.args.input.id || $ctx.args.input.id.trim() == "")
+            $util.error("User ID is required and cannot be empty", "ValidationError")
+          #end
+          #if(!$ctx.args.input.fullName && !$ctx.args.input.jurisdiction)
+            $util.error("At least one field must be provided for update", "ValidationError")
+          #end
+          #if($ctx.args.input.fullName && $ctx.args.input.fullName.trim().length() < 2)
+            $util.error("Full name must be at least 2 characters", "ValidationError")
+          #end
+          #if($ctx.args.input.jurisdiction && $ctx.args.input.jurisdiction.trim() == "")
+            $util.error("Jurisdiction cannot be empty", "ValidationError")
+          #end
           #set($now = $util.time.nowISO8601())
           #set($updates = {})
           #if($ctx.args.input.fullName)
-            $util.qr($updates.put("fullName", $util.dynamodb.toDynamoDBJson($ctx.args.input.fullName)))
+            $util.qr($updates.put("fullName", $util.dynamodb.toDynamoDBJson($ctx.args.input.fullName.trim())))
           #end
           #if($ctx.args.input.jurisdiction)
-            $util.qr($updates.put("jurisdiction", $util.dynamodb.toDynamoDBJson($ctx.args.input.jurisdiction)))
+            $util.qr($updates.put("jurisdiction", $util.dynamodb.toDynamoDBJson($ctx.args.input.jurisdiction.trim())))
           #end
           $util.qr($updates.put("updatedAt", $util.dynamodb.toDynamoDBJson($now)))
           {
@@ -246,13 +345,24 @@ export class ApiStack extends Stack {
             }
           }
         `),
-        responseMappingTemplate: appsync.MappingTemplate.dynamoDbResultItem(),
+        responseMappingTemplate: appsync.MappingTemplate.fromString(`
+          #if($ctx.error)
+            $util.error($ctx.error.message, $ctx.error.type)
+          #end
+          $util.toJson($ctx.result.attributes)
+        `),
       },
       {
         typeName: 'Mutation',
         fieldName: 'deleteChat',
         dataSource: dynamoDataSource,
         requestMappingTemplate: appsync.MappingTemplate.fromString(`
+          #if(!$ctx.args.id || $ctx.args.id.trim() == "")
+            $util.error("Chat ID is required and cannot be empty", "ValidationError")
+          #end
+          #if(!$ctx.identity.sub)
+            $util.error("User must be authenticated", "UnauthorizedError")
+          #end
           {
             "version": "2017-02-28",
             "operation": "DeleteItem",
@@ -263,10 +373,13 @@ export class ApiStack extends Stack {
           }
         `),
         responseMappingTemplate: appsync.MappingTemplate.fromString(`
+          #if($ctx.error)
+            $util.error($ctx.error.message, $ctx.error.type)
+          #end
           #if($ctx.result)
             true
           #else
-            false
+            $util.error("Chat not found or already deleted", "NotFoundError")
           #end
         `),
       },
