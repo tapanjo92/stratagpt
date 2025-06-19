@@ -6,8 +6,10 @@ import { Hub } from 'aws-amplify/utils';
 import outputs from '@/amplify_outputs.json';
 import { useAuthStore } from '@/stores/auth-store';
 
-// Configure Amplify
-Amplify.configure(outputs);
+// Configure Amplify only once
+if (!Amplify.getConfig().API?.GraphQL) {
+  Amplify.configure(outputs);
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loadUser = useAuthStore((state) => state.loadUser);
