@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "deploy": "echo \"Deployment disabled - use CDK in ../infrastructure\" && exit 1",
+    "sandbox": "echo \"Sandbox disabled - use CDK in ../infrastructure\" && exit 1"
   },
   "keywords": [],
   "author": "",

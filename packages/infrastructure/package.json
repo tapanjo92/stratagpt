@@ -8,7 +8,9 @@
     "build": "tsc",
     "watch": "tsc -w",
     "test": "jest",
-    "cdk": "cdk"
+    "cdk": "cdk",
+    "deploy": "cdk deploy --all",
+    "generate-amplify-outputs": "node scripts/generate-amplify-outputs.js"
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",
@@ -21,7 +23,7 @@
     "typescript": "~5.6.3"
   },
   "dependencies": {
-    "@aws-cdk/aws-amplify-alpha": "2.201.0-alpha.0",
+    "@aws-sdk/client-cloudformation": "^3.0.0",
     "aws-cdk-lib": "2.200.1",
     "constructs": "^10.4.2"
   }

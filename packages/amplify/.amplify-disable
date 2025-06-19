@@ -1,0 +1,5 @@
+# This file prevents Amplify from automatically deploying resources
+# The infrastructure is managed by AWS CDK in ../infrastructure
+# This directory is used only for client-side configuration
+
+AMPLIFY_DEPLOYMENT_DISABLED=true

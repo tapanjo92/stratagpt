@@ -135,7 +135,7 @@ export function AuthForms() {
         options: {
           userAttributes: {
             email: data.email,
-            given_name: data.fullName,
+            name: data.fullName,
           },
         },
       });

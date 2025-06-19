@@ -55,30 +55,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       
       set({ user, isAuthenticated: true, isLoading: false });
       
-      // Create user profile in backend if it doesn't exist
-      // This is handled after auth to avoid circular dependencies
-      try {
-        const { generateClient } = await import('aws-amplify/data');
-        const client = generateClient();
-        
-        // Check if user exists
-        const { data: existingUser } = await client.models.User.get({ id: authUser.userId });
-        
-        if (!existingUser) {
-          // Create user profile
-          await client.models.User.create({
-            id: authUser.userId,
-            email: user.email,
-            fullName: user.fullName,
-            jurisdiction: user.jurisdiction,
-            planType: user.planType,
-            stripeCustomerId: user.stripeCustomerId || '',
-          });
-        }
-      } catch (error) {
-        console.error('Error creating user profile:', error);
-        // Don't fail auth if profile creation fails
-      }
+      // TODO: Create user profile in backend once resolvers are implemented
+      // For now, we'll skip backend user creation to avoid errors
+      console.log('User profile creation skipped - backend resolvers need implementation');
     } catch (error: any) {
       // If user is not authenticated, don't treat it as an error
       if (error.name === 'UserUnAuthenticatedException') {

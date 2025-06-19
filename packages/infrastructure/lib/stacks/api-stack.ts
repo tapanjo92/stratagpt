@@ -1,4 +1,4 @@
-import { Stack, StackProps } from 'aws-cdk-lib';
+import { Stack, StackProps, CfnOutput } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as appsync from 'aws-cdk-lib/aws-appsync';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
@@ -132,6 +132,17 @@ export class ApiStack extends Stack {
         api: this.graphqlApi,
         ...resolver,
       });
+    });
+
+    // Outputs for Amplify integration
+    new CfnOutput(this, 'GraphQLApiUrl', {
+      value: this.graphqlApi.graphqlUrl,
+      exportName: `${this.stackName}-GraphQLApiUrl`,
+    });
+
+    new CfnOutput(this, 'GraphQLApiId', {
+      value: this.graphqlApi.apiId,
+      exportName: `${this.stackName}-GraphQLApiId`,
     });
   }
 }
